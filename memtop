@@ -1,0 +1,173 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["psutil", "rich", "typer"]
+# ///
+
+import time
+import typer
+import psutil
+from rich import box
+from rich.console import Console
+from rich.table import Table
+
+app = typer.Typer(
+    help="Show top N processes by RAM or CPU, plus a memory/swap summary.",
+    no_args_is_help=True,
+)
+console = Console()
+
+
+def _fmt_gib(b: int) -> str:
+    return f"{b / 1024**3:.1f} GiB"
+
+
+def _pct_color(p: float, warn: float = 60, crit: float = 80) -> str:
+    color = "red" if p >= crit else "yellow" if p >= warn else "green"
+    return f"[{color}]{p:.0f}%[/]"
+
+
+def _print_summary() -> None:
+    mem = psutil.virtual_memory()
+    swap = psutil.swap_memory()
+
+    t = Table(box=box.SIMPLE, show_header=True, header_style="bold")
+    t.add_column("")
+    t.add_column("Total", justify="right")
+    t.add_column("Used", justify="right")
+    t.add_column("Free", justify="right")
+    t.add_column("Available", justify="right")
+    t.add_column("Use%", justify="right")
+
+    t.add_row(
+        "[bold]RAM[/]",
+        _fmt_gib(mem.total),
+        _fmt_gib(mem.used),
+        _fmt_gib(mem.free),
+        _fmt_gib(mem.available),
+        _pct_color(mem.percent),
+    )
+    t.add_row(
+        "[bold]Swap[/]",
+        _fmt_gib(swap.total),
+        _fmt_gib(swap.used),
+        _fmt_gib(swap.free),
+        "—",
+        _pct_color(swap.percent),
+    )
+
+    console.print(t)
+
+
+def _proc_name(p: psutil.Process) -> str:
+    """Return a useful display name: process name, with cmdline hint for generic names."""
+    name = p.info.get("name") or "?"
+    # For interpreters and generic launchers, show first meaningful cmdline arg
+    generic = {"python3", "python", "node", "java", "ruby", "perl"}
+    if name in generic:
+        try:
+            cmdline = p.cmdline()
+            # Find first non-flag arg after the interpreter
+            args = [a for a in cmdline[1:] if not a.startswith("-")]
+            if args:
+                hint = args[0].split("/")[-1][:30]
+                return f"{name} [dim]{hint}[/]"
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+    return name
+
+
+@app.command()
+def ram(n: int = typer.Argument(15, help="Number of processes to show")):
+    """Top N processes by RAM consumption."""
+    _print_summary()
+
+    procs = []
+    for p in psutil.process_iter(["pid", "name", "username", "memory_info", "memory_percent"]):
+        try:
+            if p.info["memory_info"] is None:
+                continue
+            procs.append((p, p.info))
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+
+    procs.sort(key=lambda x: x[1]["memory_percent"] or 0, reverse=True)
+
+    t = Table(box=box.SIMPLE, title=f"Top {n} — RAM", header_style="bold")
+    t.add_column("PID", style="dim", justify="right")
+    t.add_column("User", style="dim")
+    t.add_column("Process")
+    t.add_column("RSS", justify="right")
+    t.add_column("RAM%", justify="right")
+
+    for p, info in procs[:n]:
+        rss = info["memory_info"].rss
+        pct = info["memory_percent"] or 0
+        color = "red" if pct > 5 else "yellow" if pct > 2 else ""
+        pct_str = f"[{color}]{pct:.1f}%[/]" if color else f"{pct:.1f}%"
+        t.add_row(
+            str(info["pid"]),
+            (info["username"] or "?")[:14],
+            _proc_name(p),
+            f"{rss / 1024**2:.0f} MiB",
+            pct_str,
+        )
+
+    console.print(t)
+
+
+@app.command()
+def cpu(n: int = typer.Argument(15, help="Number of processes to show")):
+    """Top N processes by CPU usage (sampled over 1 second)."""
+    _print_summary()
+
+    # Prime the cpu_percent counters
+    snapshot = {}
+    for p in psutil.process_iter(["pid", "name", "username", "memory_percent"]):
+        try:
+            p.cpu_percent()
+            snapshot[p.pid] = p
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+
+    console.print("[dim]Sampling CPU for 1 s…[/]", end="\r")
+    time.sleep(1)
+
+    procs = []
+    for pid, p in snapshot.items():
+        try:
+            cpu_pct = p.cpu_percent()
+            procs.append((p, cpu_pct))
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+
+    procs.sort(key=lambda x: x[1], reverse=True)
+
+    t = Table(box=box.SIMPLE, title=f"Top {n} — CPU", header_style="bold")
+    t.add_column("PID", style="dim", justify="right")
+    t.add_column("User", style="dim")
+    t.add_column("Process")
+    t.add_column("CPU%", justify="right")
+    t.add_column("RAM%", justify="right")
+
+    cpu_count = psutil.cpu_count()
+    for p, cpu_pct in procs[:n]:
+        info = p.info
+        mem_pct = info.get("memory_percent") or 0
+        # cpu_percent can exceed 100% on multi-core (per-core %)
+        rel = cpu_pct / cpu_count
+        color = "red" if rel > 50 else "yellow" if rel > 20 else ""
+        cpu_str = f"[{color}]{cpu_pct:.1f}%[/]" if color else f"{cpu_pct:.1f}%"
+        t.add_row(
+            str(p.pid),
+            (info.get("username") or "?")[:14],
+            _proc_name(p),
+            cpu_str,
+            f"{mem_pct:.1f}%",
+        )
+
+    console.print(t)
+
+
+if __name__ == "__main__":
+    app()
