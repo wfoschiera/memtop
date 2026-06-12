@@ -5,8 +5,9 @@
 # ///
 
 import time
-import typer
+
 import psutil
+import typer
 from rich import box
 from rich.console import Console
 from rich.table import Table
@@ -134,7 +135,7 @@ def cpu(n: int = typer.Argument(15, help="Number of processes to show")):
     time.sleep(1)
 
     procs = []
-    for pid, p in snapshot.items():
+    for p in snapshot.values():
         try:
             cpu_pct = p.cpu_percent()
             procs.append((p, cpu_pct))

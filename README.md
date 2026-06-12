@@ -107,15 +107,20 @@ Contributions are welcome — this started as a throwaway utility and is meant t
 
 1. **Fork** the repo and create a branch: `git checkout -b my-feature`.
 2. Make your change in `memtop`. Keep it a single file unless there's a strong reason not to.
-3. **Run the tests** (same command CI uses):
+3. **Use the Makefile** (wraps `uv run`, no setup needed):
 
    ```bash
-   uv run --with pytest --with psutil --with rich --with typer pytest -v
+   make            # list available targets
+   make format     # auto-format + autofix with ruff
+   make lint       # ruff check + format check
+   make test       # run the test suite
+   make check      # lint + test (exactly what CI runs)
+   make install    # symlink memtop onto your PATH
    ```
 
    Also sanity-check the CLI: `./memtop ram` and `./memtop cpu` should run cleanly.
-4. If you add a dependency, add it to the `# /// script` block at the top of the file — not a `requirements.txt`.
-5. Commit with a clear message and **open a pull request** describing what changed and why. CI runs the test suite on Python 3.11–3.13 for every push and pull request.
+4. If you add a dependency, add it to the `# /// script` block at the top of `memtop` — not a `requirements.txt`. If tests or tooling need it too, add a matching `--with` in the `Makefile`.
+5. Commit with a clear message and **open a pull request** describing what changed and why. CI runs ruff + the test suite on Python 3.11–3.13 for every push and pull request.
 
 Ideas that would make good contributions:
 
