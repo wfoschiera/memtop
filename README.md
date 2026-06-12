@@ -1,5 +1,7 @@
 # memtop
 
+[![CI](https://github.com/wfoschiera/memtop/actions/workflows/ci.yml/badge.svg)](https://github.com/wfoschiera/memtop/actions/workflows/ci.yml)
+
 A tiny, single-file CLI that shows the top N processes by **RAM** or **CPU**, alongside a color-coded **memory and swap** summary.
 
 It's a self-contained Python script with [PEP 723](https://peps.python.org/pep-0723/) inline dependencies, run via [uv](https://docs.astral.sh/uv/) — no virtualenv to manage, no `pip install`, no project setup. The dependencies live inside the file itself.
@@ -105,9 +107,15 @@ Contributions are welcome — this started as a throwaway utility and is meant t
 
 1. **Fork** the repo and create a branch: `git checkout -b my-feature`.
 2. Make your change in `memtop`. Keep it a single file unless there's a strong reason not to.
-3. **Test locally**: `./memtop ram` and `./memtop cpu` should run cleanly.
+3. **Run the tests** (same command CI uses):
+
+   ```bash
+   uv run --with pytest --with psutil --with rich --with typer pytest -v
+   ```
+
+   Also sanity-check the CLI: `./memtop ram` and `./memtop cpu` should run cleanly.
 4. If you add a dependency, add it to the `# /// script` block at the top of the file — not a `requirements.txt`.
-5. Commit with a clear message and **open a pull request** describing what changed and why.
+5. Commit with a clear message and **open a pull request** describing what changed and why. CI runs the test suite on Python 3.11–3.13 for every push and pull request.
 
 Ideas that would make good contributions:
 
